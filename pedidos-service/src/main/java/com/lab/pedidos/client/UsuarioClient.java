@@ -1,6 +1,7 @@
 package com.lab.pedidos.client;
 
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
@@ -23,8 +24,13 @@ public class UsuarioClient {
                     .retrieve()
                     .body(UsuarioResponse.class);
             return Optional.ofNullable(usuario);
-        } catch (HttpClientErrorException.NotFound e) {
-            return Optional.empty();
+        } catch (HttpClientErrorException e) {
+            // Si usuarios-service responde 404, el usuario no existe -> Optional vacio.
+            // Cualquier otro error 4xx se propaga para no ocultarlo.
+            if (e.getStatusCode() == HttpStatus.NOT_FOUND) {
+                return Optional.empty();
+            }
+            throw e;
         }
     }
 }

@@ -195,6 +195,44 @@ curl -i -X POST http://localhost:8080/api/pedidos \
   -d '{"usuarioId": 1, "productoId": 1, "cantidad": 99999}'
 ```
 
+### Order error responses (pedidos-service)
+
+`pedidos-service` validates the user and product by calling the other services over HTTP.
+When a referenced resource does not exist, it returns **404** with a clear `message`;
+when there is not enough stock, it returns **400**. Examples:
+
+```jsonc
+// POST /api/pedidos {"usuarioId": 999, "productoId": 1, "cantidad": 1}
+// HTTP 404
+{
+  "timestamp": "2026-05-29T14:17:23",
+  "status": 404,
+  "error": "Not Found",
+  "message": "Usuario no encontrado con id 999",
+  "path": "/pedidos"
+}
+
+// POST /api/pedidos {"usuarioId": 1, "productoId": 999, "cantidad": 1}
+// HTTP 404
+{
+  "timestamp": "2026-05-29T14:17:23",
+  "status": 404,
+  "error": "Not Found",
+  "message": "Producto no encontrado con id 999",
+  "path": "/pedidos"
+}
+
+// POST /api/pedidos {"usuarioId": 1, "productoId": 1, "cantidad": 99999}
+// HTTP 400
+{
+  "timestamp": "2026-05-29T14:17:23",
+  "status": 400,
+  "error": "Bad Request",
+  "message": "Stock insuficiente para el producto 1. Stock disponible: 20, cantidad solicitada: 99999",
+  "path": "/pedidos"
+}
+```
+
 ### Validation rules
 
 | Service   | Field      | Rule                          |

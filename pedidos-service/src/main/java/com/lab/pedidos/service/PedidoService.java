@@ -41,19 +41,19 @@ public class PedidoService {
         // 1) Validar usuario via HTTP contra usuarios-service
         UsuarioResponse usuario = usuarioClient.buscarPorId(request.getUsuarioId())
                 .orElseThrow(() -> new ResourceNotFoundException(
-                        "El usuario " + request.getUsuarioId() + " no existe"));
+                        "Usuario no encontrado con id " + request.getUsuarioId()));
 
         // 2) Validar producto via HTTP contra productos-service
         ProductoResponse producto = productoClient.buscarPorId(request.getProductoId())
                 .orElseThrow(() -> new ResourceNotFoundException(
-                        "El producto " + request.getProductoId() + " no existe"));
+                        "Producto no encontrado con id " + request.getProductoId()));
 
         // 3) Validar stock disponible (regla de negocio)
         if (producto.stock() < request.getCantidad()) {
             throw new BusinessException(
                     "Stock insuficiente para el producto " + producto.id()
-                            + " (disponible: " + producto.stock()
-                            + ", solicitado: " + request.getCantidad() + ")");
+                            + ". Stock disponible: " + producto.stock()
+                            + ", cantidad solicitada: " + request.getCantidad());
         }
 
         // 4) Guardar el pedido en la base de datos (el id lo genera Postgres)
