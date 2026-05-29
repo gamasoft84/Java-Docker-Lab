@@ -1,0 +1,32 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      routes:
+        # /api/usuarios/**  ->  usuarios-service  /usuarios/**
+        - id: usuarios
+          uri: ${USUARIOS_URI:http://localhost:8081}
+          predicates:
+            - Path=/api/usuarios/**
+          filters:
+            - StripPrefix=1
+
+        # /api/productos/** ->  productos-service /productos/**
+        - id: productos
+          uri: ${PRODUCTOS_URI:http://localhost:8082}
+          predicates:
+            - Path=/api/productos/**
+          filters:
+            - StripPrefix=1
+
+        # /api/pedidos/**   ->  pedidos-service   /pedidos/**
+        - id: pedidos
+          uri: ${PEDIDOS_URI:http://localhost:8083}
+          predicates:
+            - Path=/api/pedidos/**
+          filters:
+            - StripPrefix=1

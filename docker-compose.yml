@@ -110,6 +110,23 @@ services:
     networks:
       - lab-net
 
+  # ---------------- API Gateway ----------------
+  api-gateway:
+    build: ./api-gateway
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      USUARIOS_URI: http://usuarios-service:8081
+      PRODUCTOS_URI: http://productos-service:8082
+      PEDIDOS_URI: http://pedidos-service:8083
+    depends_on:
+      - usuarios-service
+      - productos-service
+      - pedidos-service
+    networks:
+      - lab-net
+
 networks:
   lab-net:
     driver: bridge

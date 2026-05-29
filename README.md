@@ -1,31 +1,49 @@
-# JavaDockerLab — 3 microservicios con Spring Boot + Docker + PostgreSQL
+# JavaDockerLab — Microservicios con Spring Boot + Docker + PostgreSQL + API Gateway
 
 Proyecto de práctica para entender microservicios, Docker y persistencia con base de datos.
-Cada microservicio tiene **su propia base de datos PostgreSQL** (patrón *database per service*)
-y usa **Spring Data JPA**.
+Cada microservicio tiene **su propia base de datos PostgreSQL** (patrón *database per service*),
+usa **Spring Data JPA**, y todo se accede a través de un **API Gateway** (Spring Cloud Gateway).
 
 ## Arquitectura
 
 ```
-                 ┌──────────────────┐
-   crea pedido   │  pedidos-service │ :8083 ──► pedidos-db   (PostgreSQL)
- ───────────────▶│                  │
-                 └───────┬──────────┘
-                         │ valida por HTTP
-            ┌────────────┴─────────────┐
-            ▼                          ▼
- ┌──────────────────┐        ┌──────────────────┐
- │ usuarios-service │ :8081  │ productos-service│ :8082
- └────────┬─────────┘        └─────────┬────────┘
-          ▼                            ▼
-     usuarios-db                  productos-db
-     (PostgreSQL)                 (PostgreSQL)
+                         cliente / Postman / curl
+                                   │
+                                   ▼
+                        ┌────────────────────┐
+                        │     api-gateway     │ :8080   (Spring Cloud Gateway)
+                        └─────────┬──────────-┘
+            ┌──────────────────---┼──────────────────────┐
+   /api/usuarios/**       /api/productos/**         /api/pedidos/**
+            ▼                     ▼                       ▼
+ ┌──────────────────┐  ┌──────────────────┐    ┌──────────────────┐
+ │ usuarios-service │  │ productos-service│    │  pedidos-service │
+ │      :8081       │  │      :8082       │    │      :8083       │
+ └────────┬─────────┘  └─────────┬────────┘    └────┬────────┬────┘
+          ▼                      ▼                   │        ▼
+     usuarios-db            productos-db             │   pedidos-db
+     (PostgreSQL)           (PostgreSQL)             │   (PostgreSQL)
+                                                     │
+            valida por HTTP a usuarios y productos ◄─┘
 ```
 
+- **api-gateway** (`:8080`): único punto de entrada. Enruta `/api/...` hacia cada servicio.
 - **usuarios-service** (`:8081`) → `usuarios-db`
 - **productos-service** (`:8082`) → `productos-db`
 - **pedidos-service** (`:8083`) → `pedidos-db`. Antes de guardar un pedido, valida por HTTP
   que el usuario y el producto existan, y que haya stock suficiente.
+
+### Rutas del gateway
+
+| Ruta en el gateway        | Se enruta a                              |
+|---------------------------|------------------------------------------|
+| `/api/usuarios/**`        | `http://usuarios-service:8081/usuarios/**`  |
+| `/api/productos/**`       | `http://productos-service:8082/productos/**`|
+| `/api/pedidos/**`         | `http://pedidos-service:8083/pedidos/**`    |
+
+> El gateway usa el filtro `StripPrefix=1`, que elimina el primer segmento (`/api`)
+> antes de reenviar. Así `/api/usuarios/1` llega al servicio como `/usuarios/1`.
+> Los puertos 8081/8082/8083 siguen disponibles directamente si quieres saltarte el gateway.
 
 Cada servicio tiene esta estructura:
 
@@ -77,54 +95,57 @@ Esto construye las imágenes, arranca las 3 bases de datos, espera a que estén 
 
 La primera vez tarda un poco porque descarga dependencias de Maven e imágenes de Postgres.
 
-## 2. Probar usuarios — http://localhost:8081
+> **Todo el acceso es a través del gateway en `http://localhost:8080`.**
+> Solo cambia el prefijo: usa `/api/usuarios`, `/api/productos`, `/api/pedidos`.
+
+## 2. Probar usuarios — vía gateway (http://localhost:8080)
 
 ```bash
 # Listar usuarios (vienen 4 de ejemplo)
-curl http://localhost:8081/usuarios
+curl http://localhost:8080/api/usuarios
 
 # Obtener uno
-curl http://localhost:8081/usuarios/1
+curl http://localhost:8080/api/usuarios/1
 
 # Crear usuario
-curl -X POST http://localhost:8081/usuarios \
+curl -X POST http://localhost:8080/api/usuarios \
   -H "Content-Type: application/json" \
   -d '{"nombre": "Nuevo Usuario", "email": "nuevo@example.com"}'
 ```
 
-## 3. Probar productos — http://localhost:8082
+## 3. Probar productos — vía gateway
 
 ```bash
 # Listar productos (vienen 2 de ejemplo)
-curl http://localhost:8082/productos
+curl http://localhost:8080/api/productos
 
 # Obtener uno
-curl http://localhost:8082/productos/1
+curl http://localhost:8080/api/productos/1
 
 # Crear producto
-curl -X POST http://localhost:8082/productos \
+curl -X POST http://localhost:8080/api/productos \
   -H "Content-Type: application/json" \
   -d '{"nombre": "Monitor 24", "precio": 129.99, "stock": 15}'
 ```
 
-## 4. Crear pedidos — http://localhost:8083
+## 4. Crear pedidos — vía gateway
 
 ```bash
 # Crear pedido válido (usuario 1 compra 2 unidades del producto 1)
-curl -X POST http://localhost:8083/pedidos \
+curl -X POST http://localhost:8080/api/pedidos \
   -H "Content-Type: application/json" \
   -d '{"usuarioId": 1, "productoId": 1, "cantidad": 2}'
 
 # Listar pedidos
-curl http://localhost:8083/pedidos
+curl http://localhost:8080/api/pedidos
 
 # Validación: usuario inexistente -> 400 Bad Request
-curl -i -X POST http://localhost:8083/pedidos \
+curl -i -X POST http://localhost:8080/api/pedidos \
   -H "Content-Type: application/json" \
   -d '{"usuarioId": 999, "productoId": 1, "cantidad": 1}'
 
 # Validación de stock -> 400 Bad Request
-curl -i -X POST http://localhost:8083/pedidos \
+curl -i -X POST http://localhost:8080/api/pedidos \
   -H "Content-Type: application/json" \
   -d '{"usuarioId": 1, "productoId": 1, "cantidad": 99999}'
 ```
@@ -134,17 +155,22 @@ Un pedido válido devuelve `201 Created` con `nombreUsuario`, `nombreProducto` y
 
 ## 5. Endpoints disponibles
 
-| Servicio          | Método | Ruta              |
-|-------------------|--------|-------------------|
-| usuarios (:8081)  | GET    | `/usuarios`       |
-| usuarios          | GET    | `/usuarios/{id}`  |
-| usuarios          | POST   | `/usuarios`       |
-| productos (:8082) | GET    | `/productos`      |
-| productos         | GET    | `/productos/{id}` |
-| productos         | POST   | `/productos`      |
-| pedidos (:8083)   | GET    | `/pedidos`        |
-| pedidos           | GET    | `/pedidos/{id}`   |
-| pedidos           | POST   | `/pedidos`        |
+Todos a través del gateway (`http://localhost:8080`):
+
+| Recurso   | Método | Ruta (gateway)         |
+|-----------|--------|------------------------|
+| usuarios  | GET    | `/api/usuarios`        |
+| usuarios  | GET    | `/api/usuarios/{id}`   |
+| usuarios  | POST   | `/api/usuarios`        |
+| productos | GET    | `/api/productos`       |
+| productos | GET    | `/api/productos/{id}`  |
+| productos | POST   | `/api/productos`       |
+| pedidos   | GET    | `/api/pedidos`         |
+| pedidos   | GET    | `/api/pedidos/{id}`    |
+| pedidos   | POST   | `/api/pedidos`         |
+
+> Acceso directo (sin gateway), útil para depurar: `http://localhost:8081/usuarios`,
+> `http://localhost:8082/productos`, `http://localhost:8083/pedidos`.
 
 ## 6. Detener los contenedores
 
@@ -177,8 +203,10 @@ docker exec -it usuarios-db psql -U usuarios -d usuarios
 ```
 
 ## Notas
+- El **api-gateway** (Spring Cloud Gateway) es el único punto de entrada público (`:8080`)
+  y enruta por nombre de servicio dentro de la red (`http://usuarios-service:8081`, etc.).
 - `pedidos-service` descubre a los otros servicios por su **nombre de servicio** dentro
   de la red de Docker (`http://usuarios-service:8081`). Para hablar con su base usa
   `jdbc:postgresql://pedidos-db:5432/pedidos`. Dentro de Docker nunca se usa `localhost`.
 - Cada servicio tiene su propia base: no comparten tablas (database per service).
-- No incluye aún: Kubernetes, Kafka, API Gateway ni seguridad (siguientes pasos).
+- No incluye aún: seguridad JWT, Kubernetes ni Kafka (siguientes pasos).
