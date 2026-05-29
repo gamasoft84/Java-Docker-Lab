@@ -6,36 +6,35 @@ import com.lab.pedidos.client.UsuarioClient;
 import com.lab.pedidos.client.UsuarioResponse;
 import com.lab.pedidos.dto.CrearPedidoRequest;
 import com.lab.pedidos.model.Pedido;
+import com.lab.pedidos.repository.PedidoRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
 
 @Service
 public class PedidoService {
 
-    private final ConcurrentHashMap<Long, Pedido> pedidos = new ConcurrentHashMap<>();
-    private final AtomicLong secuencia = new AtomicLong(0);
-
+    private final PedidoRepository pedidoRepository;
     private final UsuarioClient usuarioClient;
     private final ProductoClient productoClient;
 
-    public PedidoService(UsuarioClient usuarioClient, ProductoClient productoClient) {
+    public PedidoService(PedidoRepository pedidoRepository,
+                         UsuarioClient usuarioClient,
+                         ProductoClient productoClient) {
+        this.pedidoRepository = pedidoRepository;
         this.usuarioClient = usuarioClient;
         this.productoClient = productoClient;
     }
 
     public List<Pedido> listar() {
-        return new ArrayList<>(pedidos.values());
+        return pedidoRepository.findAll();
     }
 
     public Optional<Pedido> buscarPorId(Long id) {
-        return Optional.ofNullable(pedidos.get(id));
+        return pedidoRepository.findById(id);
     }
 
     public Pedido crear(CrearPedidoRequest request) {
@@ -60,10 +59,8 @@ public class PedidoService {
                             + ", solicitado: " + request.getCantidad() + ")");
         }
 
-        // 4) Crear el pedido en memoria
-        Long id = secuencia.incrementAndGet();
+        // 4) Guardar el pedido en la base de datos (el id lo genera Postgres)
         Pedido pedido = new Pedido();
-        pedido.setId(id);
         pedido.setUsuarioId(usuario.id());
         pedido.setNombreUsuario(usuario.nombre());
         pedido.setProductoId(producto.id());
@@ -71,7 +68,6 @@ public class PedidoService {
         pedido.setCantidad(request.getCantidad());
         pedido.setPrecioUnitario(producto.precio());
         pedido.setTotal(producto.precio() * request.getCantidad());
-        pedidos.put(id, pedido);
-        return pedido;
+        return pedidoRepository.save(pedido);
     }
 }

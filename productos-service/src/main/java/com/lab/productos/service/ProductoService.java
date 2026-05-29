@@ -2,46 +2,31 @@ package com.lab.productos.service;
 
 import com.lab.productos.dto.CrearProductoRequest;
 import com.lab.productos.model.Producto;
+import com.lab.productos.repository.ProductoRepository;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
 
 @Service
 public class ProductoService {
 
-    private final ConcurrentHashMap<Long, Producto> productos = new ConcurrentHashMap<>();
-    private final AtomicLong secuencia = new AtomicLong(0);
+    private final ProductoRepository productoRepository;
 
-    public ProductoService() {
-        // Datos de ejemplo en memoria (ids 1 y 2)
-        guardar("Teclado mecanico", 45.99, 20);
-        guardar("Mouse inalambrico", 19.50, 50);
-    }
-
-    private void guardar(String nombre, double precio, int stock) {
-        CrearProductoRequest request = new CrearProductoRequest();
-        request.setNombre(nombre);
-        request.setPrecio(precio);
-        request.setStock(stock);
-        crear(request);
+    public ProductoService(ProductoRepository productoRepository) {
+        this.productoRepository = productoRepository;
     }
 
     public List<Producto> listar() {
-        return new ArrayList<>(productos.values());
+        return productoRepository.findAll();
     }
 
     public Optional<Producto> buscarPorId(Long id) {
-        return Optional.ofNullable(productos.get(id));
+        return productoRepository.findById(id);
     }
 
     public Producto crear(CrearProductoRequest request) {
-        Long id = secuencia.incrementAndGet();
-        Producto producto = new Producto(id, request.getNombre(), request.getPrecio(), request.getStock());
-        productos.put(id, producto);
-        return producto;
+        Producto producto = new Producto(request.getNombre(), request.getPrecio(), request.getStock());
+        return productoRepository.save(producto);
     }
 }

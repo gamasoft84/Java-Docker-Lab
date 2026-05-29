@@ -1,9 +1,75 @@
 services:
+  # ---------------- Bases de datos ----------------
+  usuarios-db:
+    image: postgres:16
+    container_name: usuarios-db
+    environment:
+      POSTGRES_DB: usuarios
+      POSTGRES_USER: usuarios
+      POSTGRES_PASSWORD: usuarios
+    ports:
+      - "5433:5432"
+    volumes:
+      - usuarios-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U usuarios -d usuarios"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - lab-net
+
+  productos-db:
+    image: postgres:16
+    container_name: productos-db
+    environment:
+      POSTGRES_DB: productos
+      POSTGRES_USER: productos
+      POSTGRES_PASSWORD: productos
+    ports:
+      - "5434:5432"
+    volumes:
+      - productos-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U productos -d productos"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - lab-net
+
+  pedidos-db:
+    image: postgres:16
+    container_name: pedidos-db
+    environment:
+      POSTGRES_DB: pedidos
+      POSTGRES_USER: pedidos
+      POSTGRES_PASSWORD: pedidos
+    ports:
+      - "5435:5432"
+    volumes:
+      - pedidos-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pedidos -d pedidos"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - lab-net
+
+  # ---------------- Microservicios ----------------
   usuarios-service:
     build: ./usuarios-service
     container_name: usuarios-service
     ports:
       - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://usuarios-db:5432/usuarios
+      SPRING_DATASOURCE_USERNAME: usuarios
+      SPRING_DATASOURCE_PASSWORD: usuarios
+    depends_on:
+      usuarios-db:
+        condition: service_healthy
     networks:
       - lab-net
 
@@ -12,6 +78,13 @@ services:
     container_name: productos-service
     ports:
       - "8082:8082"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://productos-db:5432/productos
+      SPRING_DATASOURCE_USERNAME: productos
+      SPRING_DATASOURCE_PASSWORD: productos
+    depends_on:
+      productos-db:
+        condition: service_healthy
     networks:
       - lab-net
 
@@ -21,15 +94,27 @@ services:
     ports:
       - "8083:8083"
     environment:
-      # Dentro de la red de Docker se usan los nombres de servicio, no localhost.
+      SPRING_DATASOURCE_URL: jdbc:postgresql://pedidos-db:5432/pedidos
+      SPRING_DATASOURCE_USERNAME: pedidos
+      SPRING_DATASOURCE_PASSWORD: pedidos
+      # Comunicacion HTTP hacia los otros servicios (por nombre de servicio en la red)
       SERVICIOS_USUARIOS_URL: http://usuarios-service:8081
       SERVICIOS_PRODUCTOS_URL: http://productos-service:8082
     depends_on:
-      - usuarios-service
-      - productos-service
+      pedidos-db:
+        condition: service_healthy
+      usuarios-service:
+        condition: service_started
+      productos-service:
+        condition: service_started
     networks:
       - lab-net
 
 networks:
   lab-net:
     driver: bridge
+
+volumes:
+  usuarios-data:
+  productos-data:
+  pedidos-data:
