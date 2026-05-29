@@ -1,0 +1,35 @@
+services:
+  usuarios-service:
+    build: ./usuarios-service
+    container_name: usuarios-service
+    ports:
+      - "8081:8081"
+    networks:
+      - lab-net
+
+  productos-service:
+    build: ./productos-service
+    container_name: productos-service
+    ports:
+      - "8082:8082"
+    networks:
+      - lab-net
+
+  pedidos-service:
+    build: ./pedidos-service
+    container_name: pedidos-service
+    ports:
+      - "8083:8083"
+    environment:
+      # Dentro de la red de Docker se usan los nombres de servicio, no localhost.
+      SERVICIOS_USUARIOS_URL: http://usuarios-service:8081
+      SERVICIOS_PRODUCTOS_URL: http://productos-service:8082
+    depends_on:
+      - usuarios-service
+      - productos-service
+    networks:
+      - lab-net
+
+networks:
+  lab-net:
+    driver: bridge
