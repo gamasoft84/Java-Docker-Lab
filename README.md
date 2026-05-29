@@ -1,13 +1,25 @@
-# JavaDockerLab — Microservicios con Spring Boot + Docker + PostgreSQL + API Gateway
+# JavaDockerLab
 
-Proyecto de práctica para entender microservicios, Docker y persistencia con base de datos.
-Cada microservicio tiene **su propia base de datos PostgreSQL** (patrón *database per service*),
-usa **Spring Data JPA**, y todo se accede a través de un **API Gateway** (Spring Cloud Gateway).
+A hands-on microservices lab built with **Java 17 + Spring Boot 3**, **Spring Cloud Gateway**,
+**PostgreSQL** (one database per service) and **Docker Compose**. It includes input
+validation, a consistent JSON error format and a single entry point through an API Gateway.
 
-## Arquitectura
+> Learning-focused project for a portfolio. No JWT, Kafka or Kubernetes yet (see [Next Steps](#next-steps)).
+
+## Project Overview
+
+- **4 services**: an API Gateway plus 3 business microservices (usuarios, productos, pedidos).
+- **Database per service**: each microservice owns its own PostgreSQL instance.
+- **Service-to-service communication**: `pedidos-service` calls `usuarios-service` and
+  `productos-service` over HTTP to validate references before creating an order.
+- **Single entry point**: every request goes through the gateway at `http://localhost:8080`.
+- **Production-style basics**: Jakarta Validation on DTOs, custom exceptions, a global
+  exception handler returning a uniform JSON error body, healthchecks and named volumes.
+
+## Architecture
 
 ```
-                         cliente / Postman / curl
+                         client / Postman / curl
                                    │
                                    ▼
                         ┌────────────────────┐
@@ -24,189 +36,245 @@ usa **Spring Data JPA**, y todo se accede a través de un **API Gateway** (Sprin
      usuarios-db            productos-db             │   pedidos-db
      (PostgreSQL)           (PostgreSQL)             │   (PostgreSQL)
                                                      │
-            valida por HTTP a usuarios y productos ◄─┘
+            validates over HTTP (usuarios + productos) ◄┘
 ```
 
-- **api-gateway** (`:8080`): único punto de entrada. Enruta `/api/...` hacia cada servicio.
-- **usuarios-service** (`:8081`) → `usuarios-db`
-- **productos-service** (`:8082`) → `productos-db`
-- **pedidos-service** (`:8083`) → `pedidos-db`. Antes de guardar un pedido, valida por HTTP
-  que el usuario y el producto existan, y que haya stock suficiente.
-
-### Rutas del gateway
-
-| Ruta en el gateway        | Se enruta a                              |
-|---------------------------|------------------------------------------|
-| `/api/usuarios/**`        | `http://usuarios-service:8081/usuarios/**`  |
-| `/api/productos/**`       | `http://productos-service:8082/productos/**`|
-| `/api/pedidos/**`         | `http://pedidos-service:8083/pedidos/**`    |
-
-> El gateway usa el filtro `StripPrefix=1`, que elimina el primer segmento (`/api`)
-> antes de reenviar. Así `/api/usuarios/1` llega al servicio como `/usuarios/1`.
-> Los puertos 8081/8082/8083 siguen disponibles directamente si quieres saltarte el gateway.
-
-Cada servicio tiene esta estructura:
+Each microservice follows the same layout:
 
 ```
-servicio/
-├── Dockerfile                 # build multi-stage (compila con Maven dentro del contenedor)
+service/
+├── Dockerfile                 # multi-stage build (compiles with Maven inside the container)
 ├── pom.xml
 └── src/main/
-    ├── java/com/lab/<servicio>/
-    │   ├── controller/        # endpoints REST
-    │   ├── service/           # lógica de negocio
-    │   ├── repository/        # Spring Data JPA (JpaRepository)
-    │   ├── model/             # entidades @Entity
-    │   ├── dto/               # objetos de request
-    │   ├── config/            # carga datos de ejemplo (solo usuarios y productos)
-    │   └── client/            # (solo pedidos) llamadas HTTP a otros servicios
+    ├── java/com/lab/<service>/
+    │   ├── controller/        # REST endpoints (@Valid)
+    │   ├── service/           # business logic
+    │   ├── repository/        # Spring Data JPA
+    │   ├── model/             # @Entity
+    │   ├── dto/               # request objects + validation annotations
+    │   ├── exception/         # ErrorResponse, custom exceptions, GlobalExceptionHandler
+    │   ├── config/            # sample data seeder (usuarios & productos only)
+    │   └── client/            # (pedidos only) HTTP clients to other services
     └── resources/application.properties
 ```
 
-## Requisitos
+## Services and Ports
 
-Solo necesitas **Docker** (Docker Desktop o Colima). No hace falta Java ni Maven:
-cada `Dockerfile` compila el servicio dentro del contenedor (build multi-stage).
+| Service           | Port  | Description                                   | Database     |
+|-------------------|-------|-----------------------------------------------|--------------|
+| api-gateway       | 8080  | Single entry point (Spring Cloud Gateway)     | —            |
+| usuarios-service  | 8081  | Users CRUD                                    | usuarios-db  |
+| productos-service | 8082  | Products CRUD (with stock)                    | productos-db |
+| pedidos-service   | 8083  | Orders; validates users/products over HTTP    | pedidos-db   |
 
-## Persistencia y base de datos
+## Databases
 
-- Cada base de datos guarda sus archivos en un **volumen** de Docker, así los datos
-  **sobreviven** a `docker compose down` y reinicios:
-  - `usuarios-data`, `productos-data`, `pedidos-data`
-- Hibernate crea/actualiza las tablas automáticamente al arrancar
-  (`spring.jpa.hibernate.ddl-auto=update`).
-- `usuarios-service` y `productos-service` cargan datos de ejemplo **solo si la tabla está vacía**.
-- Las bases también quedan expuestas a tu máquina por si quieres conectarte con un cliente SQL:
-  - `usuarios-db` → `localhost:5433`
-  - `productos-db` → `localhost:5434`
-  - `pedidos-db`   → `localhost:5435`
-  - (usuario/contraseña/base coinciden con el nombre: `usuarios`/`usuarios`/`usuarios`, etc.)
+Each service has its own PostgreSQL database (*database per service*). They are also exposed
+to the host for inspection with a SQL client:
 
-## 1. Levantar todo
+| Database     | Host port | DB / User / Password   |
+|--------------|-----------|------------------------|
+| usuarios-db  | 5433      | `usuarios`             |
+| productos-db | 5434      | `productos`            |
+| pedidos-db   | 5435      | `pedidos`              |
 
-Desde la raíz del proyecto (`JavaDockerLab/`):
+- Schema is created/updated automatically by Hibernate (`spring.jpa.hibernate.ddl-auto=update`).
+- `usuarios-service` and `productos-service` seed sample data **only when their table is empty**.
+
+## API Gateway Routes
+
+The gateway strips the `/api` prefix (`StripPrefix=1`) and forwards to the target service.
+
+| Gateway route        | Forwards to                                  |
+|----------------------|----------------------------------------------|
+| `/api/usuarios/**`   | `http://usuarios-service:8081/usuarios/**`   |
+| `/api/productos/**`  | `http://productos-service:8082/productos/**` |
+| `/api/pedidos/**`    | `http://pedidos-service:8083/pedidos/**`     |
+
+Example: `GET /api/usuarios/1` reaches `usuarios-service` as `GET /usuarios/1`.
+
+## Docker Commands
 
 ```bash
+# Build images and start everything (gateway + 3 services + 3 databases)
 docker compose up --build
+
+# Same, in the background
+docker compose up --build -d
+
+# Stop and remove containers + network (DATA IS KEPT in volumes)
+docker compose down
+
+# Stop and ALSO delete volumes (fresh databases next time)
+docker compose down -v
+
+# Useful
+docker compose ps                            # container status
+docker compose logs -f api-gateway           # follow a service's logs
+docker compose up -d --build usuarios-service  # rebuild only one service
 ```
 
-Esto construye las imágenes, arranca las 3 bases de datos, espera a que estén **listas**
-(healthcheck) y luego levanta los 3 microservicios. En segundo plano: agrega `-d`.
+## Manual Testing with curl
 
-La primera vez tarda un poco porque descarga dependencias de Maven e imágenes de Postgres.
+All requests go through the gateway at `http://localhost:8080`.
+A Postman collection is also available at
+[`docs/postman/JavaDockerLab.postman_collection.json`](docs/postman/JavaDockerLab.postman_collection.json)
+(import it into Postman and use the `baseUrl` variable).
 
-> **Todo el acceso es a través del gateway en `http://localhost:8080`.**
-> Solo cambia el prefijo: usa `/api/usuarios`, `/api/productos`, `/api/pedidos`.
-
-## 2. Probar usuarios — vía gateway (http://localhost:8080)
+### Users
 
 ```bash
-# Listar usuarios (vienen 4 de ejemplo)
+# List users (4 seeded by default)
 curl http://localhost:8080/api/usuarios
 
-# Obtener uno
+# Get one
 curl http://localhost:8080/api/usuarios/1
 
-# Crear usuario
+# Create user (201 Created)
 curl -X POST http://localhost:8080/api/usuarios \
   -H "Content-Type: application/json" \
   -d '{"nombre": "Nuevo Usuario", "email": "nuevo@example.com"}'
 ```
 
-## 3. Probar productos — vía gateway
+### Products
 
 ```bash
-# Listar productos (vienen 2 de ejemplo)
+# List products (2 seeded by default)
 curl http://localhost:8080/api/productos
 
-# Obtener uno
-curl http://localhost:8080/api/productos/1
-
-# Crear producto
+# Create product (201 Created)
 curl -X POST http://localhost:8080/api/productos \
   -H "Content-Type: application/json" \
   -d '{"nombre": "Monitor 24", "precio": 129.99, "stock": 15}'
 ```
 
-## 4. Crear pedidos — vía gateway
+### Orders
 
 ```bash
-# Crear pedido válido (usuario 1 compra 2 unidades del producto 1)
+# Create a valid order (201 Created)
 curl -X POST http://localhost:8080/api/pedidos \
   -H "Content-Type: application/json" \
   -d '{"usuarioId": 1, "productoId": 1, "cantidad": 2}'
 
-# Listar pedidos
+# List orders
 curl http://localhost:8080/api/pedidos
+```
 
-# Validación: usuario inexistente -> 400 Bad Request
+> Direct access (bypassing the gateway), handy for debugging:
+> `http://localhost:8081/usuarios`, `http://localhost:8082/productos`, `http://localhost:8083/pedidos`.
+
+## Validation Examples
+
+DTOs are validated with Jakarta Validation (`@NotBlank`, `@NotNull`, `@Email`, `@Positive`,
+`@PositiveOrZero`). Invalid input returns **400 Bad Request** with the error format below.
+
+```bash
+# Invalid email -> 400
+curl -i -X POST http://localhost:8080/api/usuarios \
+  -H "Content-Type: application/json" \
+  -d '{"nombre": "X", "email": "not-an-email"}'
+
+# Price must be > 0 -> 400
+curl -i -X POST http://localhost:8080/api/productos \
+  -H "Content-Type: application/json" \
+  -d '{"nombre": "Bad", "precio": 0, "stock": 5}'
+
+# Order for a non-existent user -> 404
 curl -i -X POST http://localhost:8080/api/pedidos \
   -H "Content-Type: application/json" \
   -d '{"usuarioId": 999, "productoId": 1, "cantidad": 1}'
 
-# Validación de stock -> 400 Bad Request
+# Order for a non-existent product -> 404
+curl -i -X POST http://localhost:8080/api/pedidos \
+  -H "Content-Type: application/json" \
+  -d '{"usuarioId": 1, "productoId": 999, "cantidad": 1}'
+
+# Not enough stock (business rule) -> 400
 curl -i -X POST http://localhost:8080/api/pedidos \
   -H "Content-Type: application/json" \
   -d '{"usuarioId": 1, "productoId": 1, "cantidad": 99999}'
 ```
 
-En **Postman**: para los `POST` usa Body → raw → JSON con el cuerpo indicado.
-Un pedido válido devuelve `201 Created` con `nombreUsuario`, `nombreProducto` y `total`.
+### Validation rules
 
-## 5. Endpoints disponibles
+| Service   | Field      | Rule                          |
+|-----------|------------|-------------------------------|
+| usuarios  | nombre     | `@NotBlank`                   |
+| usuarios  | email      | `@NotBlank` + `@Email`        |
+| productos | nombre     | `@NotBlank`                   |
+| productos | precio     | `@Positive` (> 0)             |
+| productos | stock      | `@PositiveOrZero` (>= 0)      |
+| pedidos   | usuarioId  | `@NotNull`                    |
+| pedidos   | productoId | `@NotNull`                    |
+| pedidos   | cantidad   | `@Positive` (> 0)             |
 
-Todos a través del gateway (`http://localhost:8080`):
+## Error Response Format
 
-| Recurso   | Método | Ruta (gateway)         |
-|-----------|--------|------------------------|
-| usuarios  | GET    | `/api/usuarios`        |
-| usuarios  | GET    | `/api/usuarios/{id}`   |
-| usuarios  | POST   | `/api/usuarios`        |
-| productos | GET    | `/api/productos`       |
-| productos | GET    | `/api/productos/{id}`  |
-| productos | POST   | `/api/productos`       |
-| pedidos   | GET    | `/api/pedidos`         |
-| pedidos   | GET    | `/api/pedidos/{id}`    |
-| pedidos   | POST   | `/api/pedidos`         |
+Every error (validation, not found, business rule, unexpected) returns the same JSON shape,
+produced by a `@RestControllerAdvice` (`GlobalExceptionHandler`) in each service:
 
-> Acceso directo (sin gateway), útil para depurar: `http://localhost:8081/usuarios`,
-> `http://localhost:8082/productos`, `http://localhost:8083/pedidos`.
-
-## 6. Detener los contenedores
-
-```bash
-# Si está en primer plano: Ctrl + C
-
-# Detener y eliminar contenedores y red (los datos SE CONSERVAN en los volúmenes)
-docker compose down
+```json
+{
+  "timestamp": "2026-05-29T10:30:00",
+  "status": 400,
+  "error": "Bad Request",
+  "message": "email: El email no tiene un formato valido",
+  "path": "/usuarios"
+}
 ```
 
-## 7. Reiniciar la base de datos desde cero (borrar volúmenes)
+HTTP status codes used:
+
+| Status | When                                                        |
+|--------|-------------------------------------------------------------|
+| 200    | Successful GET                                              |
+| 201    | Successful creation (POST)                                  |
+| 400    | Invalid input (validation) or business rule (e.g. no stock) |
+| 404    | Resource not found (`ResourceNotFoundException`)            |
+| 500    | Unexpected, uncontrolled error                             |
+
+Custom exceptions: `ResourceNotFoundException` (→ 404) and `BusinessException` (→ 400).
+
+## Database Persistence
+
+- Each database stores its files in a **named Docker volume**, so data **survives**
+  `docker compose down` and restarts:
+  - `usuarios-data`, `productos-data`, `pedidos-data`
+- To wipe all data and start fresh, delete the volumes:
 
 ```bash
-# Detiene todo y BORRA los volúmenes -> se pierden todos los datos
 docker compose down -v
 ```
 
-Al volver a `docker compose up --build`, las tablas se recrean vacías y se vuelven
-a cargar los datos de ejemplo de usuarios y productos.
+On the next `docker compose up --build`, tables are recreated empty and sample users/products
+are seeded again.
 
-## Comandos útiles
+## DBeaver Connection Info
+
+With the containers running, create a PostgreSQL connection per database:
+
+| Field    | usuarios-db | productos-db | pedidos-db |
+|----------|-------------|--------------|------------|
+| Host     | localhost   | localhost    | localhost  |
+| Port     | 5433        | 5434         | 5435       |
+| Database | usuarios    | productos    | pedidos    |
+| Username | usuarios    | productos    | pedidos    |
+| Password | usuarios    | productos    | pedidos    |
+
+Or open a shell directly inside a container:
 
 ```bash
-docker compose ps                          # ver estado de contenedores
-docker compose logs -f pedidos-service     # seguir logs de un servicio
-docker compose up -d --build usuarios-service   # reconstruir solo un servicio
-
-# Entrar a una base con psql
 docker exec -it usuarios-db psql -U usuarios -d usuarios
 ```
 
-## Notas
-- El **api-gateway** (Spring Cloud Gateway) es el único punto de entrada público (`:8080`)
-  y enruta por nombre de servicio dentro de la red (`http://usuarios-service:8081`, etc.).
-- `pedidos-service` descubre a los otros servicios por su **nombre de servicio** dentro
-  de la red de Docker (`http://usuarios-service:8081`). Para hablar con su base usa
-  `jdbc:postgresql://pedidos-db:5432/pedidos`. Dentro de Docker nunca se usa `localhost`.
-- Cada servicio tiene su propia base: no comparten tablas (database per service).
-- No incluye aún: seguridad JWT, Kubernetes ni Kafka (siguientes pasos).
+## Requirements
+
+Only **Docker** is required (Docker Desktop or Colima). Java and Maven are **not** needed:
+each `Dockerfile` compiles its service inside the container (multi-stage build).
+
+## Next Steps
+
+- **JWT Authentication** — secure the gateway and propagate identity to services.
+- **Centralized logging** — aggregate logs (e.g. ELK / Loki) across services.
+- **Kafka events** — emit/consume domain events (e.g. order created) asynchronously.
+- **Kubernetes deployment** — manifests/Helm to run the stack on a cluster.

@@ -1,6 +1,7 @@
 package com.lab.pedidos.controller;
 
 import com.lab.pedidos.dto.CrearPedidoRequest;
+import com.lab.pedidos.exception.ResourceNotFoundException;
 import com.lab.pedidos.model.Pedido;
 import com.lab.pedidos.service.PedidoService;
 import jakarta.validation.Valid;
@@ -12,7 +13,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
@@ -34,8 +34,7 @@ public class PedidoController {
     @GetMapping("/{id}")
     public Pedido obtener(@PathVariable Long id) {
         return pedidoService.buscarPorId(id)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "Pedido " + id + " no encontrado"));
+                .orElseThrow(() -> new ResourceNotFoundException("Pedido " + id + " no encontrado"));
     }
 
     @PostMapping

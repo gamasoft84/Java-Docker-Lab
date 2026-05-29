@@ -1,6 +1,7 @@
 package com.lab.usuarios.controller;
 
 import com.lab.usuarios.dto.CrearUsuarioRequest;
+import com.lab.usuarios.exception.ResourceNotFoundException;
 import com.lab.usuarios.model.Usuario;
 import com.lab.usuarios.service.UsuarioService;
 import jakarta.validation.Valid;
@@ -12,7 +13,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
@@ -34,8 +34,7 @@ public class UsuarioController {
     @GetMapping("/{id}")
     public Usuario obtener(@PathVariable Long id) {
         return usuarioService.buscarPorId(id)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "Usuario " + id + " no encontrado"));
+                .orElseThrow(() -> new ResourceNotFoundException("Usuario " + id + " no encontrado"));
     }
 
     @PostMapping

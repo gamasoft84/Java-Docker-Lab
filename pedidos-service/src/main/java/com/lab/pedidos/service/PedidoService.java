@@ -5,11 +5,11 @@ import com.lab.pedidos.client.ProductoResponse;
 import com.lab.pedidos.client.UsuarioClient;
 import com.lab.pedidos.client.UsuarioResponse;
 import com.lab.pedidos.dto.CrearPedidoRequest;
+import com.lab.pedidos.exception.BusinessException;
+import com.lab.pedidos.exception.ResourceNotFoundException;
 import com.lab.pedidos.model.Pedido;
 import com.lab.pedidos.repository.PedidoRepository;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Optional;
@@ -40,20 +40,17 @@ public class PedidoService {
     public Pedido crear(CrearPedidoRequest request) {
         // 1) Validar usuario via HTTP contra usuarios-service
         UsuarioResponse usuario = usuarioClient.buscarPorId(request.getUsuarioId())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
+                .orElseThrow(() -> new ResourceNotFoundException(
                         "El usuario " + request.getUsuarioId() + " no existe"));
 
         // 2) Validar producto via HTTP contra productos-service
         ProductoResponse producto = productoClient.buscarPorId(request.getProductoId())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
+                .orElseThrow(() -> new ResourceNotFoundException(
                         "El producto " + request.getProductoId() + " no existe"));
 
-        // 3) Validar stock disponible
+        // 3) Validar stock disponible (regla de negocio)
         if (producto.stock() < request.getCantidad()) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
+            throw new BusinessException(
                     "Stock insuficiente para el producto " + producto.id()
                             + " (disponible: " + producto.stock()
                             + ", solicitado: " + request.getCantidad() + ")");

@@ -1,6 +1,7 @@
 package com.lab.productos.controller;
 
 import com.lab.productos.dto.CrearProductoRequest;
+import com.lab.productos.exception.ResourceNotFoundException;
 import com.lab.productos.model.Producto;
 import com.lab.productos.service.ProductoService;
 import jakarta.validation.Valid;
@@ -12,7 +13,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
@@ -34,8 +34,7 @@ public class ProductoController {
     @GetMapping("/{id}")
     public Producto obtener(@PathVariable Long id) {
         return productoService.buscarPorId(id)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "Producto " + id + " no encontrado"));
+                .orElseThrow(() -> new ResourceNotFoundException("Producto " + id + " no encontrado"));
     }
 
     @PostMapping
